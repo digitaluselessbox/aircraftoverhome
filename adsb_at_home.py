@@ -7,13 +7,14 @@ import math
 import json
 import logging
 import os
-from collections import namedtuple
+
 from utils import safe_int, safe_float, haversine
 
 from logging.handlers import RotatingFileHandler
+from logic.sbs_client import SBSClient
 from logic.sbs_parser import SBSParser
 from logic.aircraft_tracker import AircraftTracker
-from logic.sbs_client import SBSClient
+from logic.aircraft import Aircraft
 
 ENVIRONTMENT = "DEVELOPMENT"
 
@@ -42,18 +43,6 @@ if(ENVIRONTMENT == "DEVELOPMENT"):
     ALLTIME_JSON_FILE = DUMP1090DATAFOLDER + "/aircraft_over_home_alltime.json"
     LOG_DIRECTORY = "./log"
 
-
-# Definition des NamedTuple für Flugzeugdaten
-Aircraft = namedtuple('Aircraft', [
-    'hex', 
-    'registration',
-    'altitude', 
-    'distance',
-    'lat', 
-    'lon', 
-    'seen', 
-    'last_seen'
-])
 
 # Sicherstellen, dass das Verzeichnis für Logs existiert
 os.makedirs(LOG_DIRECTORY, exist_ok=True)
@@ -172,19 +161,18 @@ while True:
                 else:
                     main_logger.warning(f"Key {sbs_message.icao} not found in JSON data.")
 
-
                 aircraft = Aircraft(
                     hex = sbs_message.icao,
                     registration = registration,
                     altitude = sbs_message.altitude,
-                    distance = distance,
                     lat = sbs_message.latitude,
                     lon = sbs_message.longitude,
-                    seen = 1,
-                    last_seen = sbs_message.timestamp
+                    timestamp = sbs_message.timestamp
                 )
+                aircraft.calculate_distance(HOME_LAT, HOME_LON)
+                
 
-                relevant_entries = [a for a in tracker.current_aircraft if a['hex'] == aircraft.hex]
+                relevant_entries = tracker.get_existing_entries(aircraft.hex)
                 
                 if not relevant_entries or tracker.should_add_new(relevant_entries, current_time):
                     usedAction = "new aircraft"
@@ -195,7 +183,7 @@ while True:
                     latest_entry = max( relevant_entries, key = lambda x: x['last_seen'] )
                     
                     # aircraft nur aktualisieren, wenn entfernung niedriger ist als die gespeichert Entfernung
-                    if aircraft.distance < latest_entry['distance']:
+                    if aircraft.distance < latest_entry.distance:
                         usedAction = "update aircraft"
                         tracker.update_aircraft(latest_entry, aircraft)
                 #else:
