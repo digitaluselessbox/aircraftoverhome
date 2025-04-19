@@ -2,21 +2,19 @@
 
 import socket
 import select
-import time
 
 class SBSClient:
-    def __init__(self, host: str, port: int, logger=None):
-        self.host = host
-        self.port = port
+    def __init__(self, config, logger=None):
+        self.config = config
+        self.logger = logger
         self.sock = None
         self.buffer = ""
-        self.logger = logger
 
     def connect(self):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 65536)
         self.sock.setblocking(False)
-        self.sock.connect_ex((self.host, self.port))
+        self.sock.connect_ex((self.config.HOST, self.config.PORT))
 
         ready_to_read, ready_to_write, in_error = select.select([], [self.sock], [], 5)
         if not ready_to_write:

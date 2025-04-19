@@ -5,15 +5,12 @@ import json
 from logic.aircraft import Aircraft  # neue Aircraft-Klasse importieren
 
 class AircraftTracker:
-    def __init__(self, json_path_current, json_path_alltime, ttl_seconds, new_entry_ttl):
-        self.json_path_current = json_path_current
-        self.json_path_alltime = json_path_alltime
-        self.ttl_seconds = ttl_seconds
-        self.new_entry_ttl = new_entry_ttl
+    def __init__(self, config):
+        self.config = config        
 
         # Beim Laden: JSON → Aircraft-Objekte
-        self.current_aircraft = [Aircraft.from_dict(a) for a in self._load(self.json_path_current)]
-        self.alltime_aircraft = [Aircraft.from_dict(a) for a in self._load(self.json_path_alltime)]
+        self.current_aircraft = [Aircraft.from_dict(a) for a in self._load(self.config.JSON_FILE)]
+        self.alltime_aircraft = [Aircraft.from_dict(a) for a in self._load(self.config.ALLTIME_JSON_FILE)]
 
     def _load(self, path):
         try:
@@ -43,17 +40,17 @@ class AircraftTracker:
         return [a for a in self.current_aircraft if a.hex == hex_code]
 
     def should_add_new(self, entries, current_time):
-        return all(current_time - e.last_seen >= self.new_entry_ttl for e in entries)
+        return all(current_time - e.last_seen >= self.config.NEW_ENTRY_TTL_SECONDS for e in entries)
 
     def cleanup_old(self, current_time):
         still_valid = []
         for aircraft in self.current_aircraft:
-            if current_time - aircraft.last_seen <= self.ttl_seconds:
+            if current_time - aircraft.last_seen <= self.config.TTL_SECONDS:
                 still_valid.append(aircraft)
             else:
                 self.alltime_aircraft.append(aircraft)
         self.current_aircraft = still_valid
 
     def save_all(self):
-        self._save(self.json_path_current, self.current_aircraft)
-        self._save(self.json_path_alltime, self.alltime_aircraft)
+        self._save(self.config.JSON_FILE, self.current_aircraft)
+        self._save(self.config.ALLTIME_JSON_FILE, self.alltime_aircraft)

@@ -1,8 +1,6 @@
-import time
 from utils import haversine
-
 class Aircraft:
-    def __init__(self, hex, registration=None, altitude=None, lat=None, lon=None, timestamp=None):
+    def __init__(self, hex, registration=None, altitude=None, lat=None, lon=None, timestamp=None, config=None):
         self.hex = hex
         self.registration = registration
         self.altitude = altitude
@@ -10,7 +8,11 @@ class Aircraft:
         self.lon = lon
         self.last_seen = timestamp or time.time()
         self.seen = 1
-        self.distance = None  # wird dynamisch berechnet
+        self.distance = None
+
+        # Falls Config übergeben wurde: distance sofort berechnen
+        if config:
+            self.calculate_distance(config.HOME_LAT, config.HOME_LON)
 
     def is_valid_position(self):
         return self.lat is not None and self.lon is not None and -90 <= self.lat <= 90 and -180 <= self.lon <= 180
@@ -37,7 +39,7 @@ class Aircraft:
 
     @staticmethod
     def from_dict(data):
-        ac = Aircraft(
+        return Aircraft(
             hex=data.get("hex"),
             registration=data.get("registration"),
             altitude=data.get("altitude"),
@@ -45,6 +47,6 @@ class Aircraft:
             lon=data.get("lon"),
             timestamp=data.get("last_seen")
         )
-        ac.distance = data.get("distance")
-        ac.seen = data.get("seen", 1)
-        return ac
+
+    def set_registration(self, registration):
+        self.registration = registration
