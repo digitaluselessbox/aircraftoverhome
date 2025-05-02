@@ -19,8 +19,12 @@ main_logger = log.get_logger("main")
 debug_logger = log.get_logger("debug")
 lines_logger = log.get_logger("lines")
 
+# laden der aircraft registration database json file and save it in a dictionary
+with open(config.DUMP1090DATAFOLDER + "/database/aircraft_registrations.json", 'r') as file:
+    aircraftRegistrationDB = json.load(file)
+
 # AircraftTracker initialisierung
-aircraftTracker = AircraftTracker(config)
+aircraftTracker = AircraftTracker(config=config, log=log, aircraftRegistrationDB=aircraftRegistrationDB)
 
 # SBSClient initialisierung
 sbsClient = SBSClient(config, logger=main_logger)
@@ -39,27 +43,12 @@ signal.signal(signal.SIGINT, signal_handler)
 
 main_logger.info(f"Skript gestartet: {config.HOST}:{config.PORT}")
 
-# laden der aircraft registration database json file and save it in a dictionary
-with open(config.DUMP1090DATAFOLDER + "/database/aircraft_registrations.json", 'r') as file:
-    aircraftRegistrationDB = json.load(file)
-
-def is_valid_lat_lon( sbs_message ):
-    # Prüft, ob die Latitude und Longitude gültig sind.
-    
-    return sbs_message.latitude is not None and sbs_message.longitude is not None and -90 <= sbs_message.latitude  <= 90 and -180 <= sbs_message.longitude <= 180
-
-
-def is_valid_altitude( sbs_message ):
-    # Prüft, ob die Höhe gültig ist.
-    
-    return sbs_message.altitude is not None and sbs_message.altitude >= 0
 
 # Hauptschleife
 buffer = ""
 while True:
     try:
         lines = sbsClient.read_lines()
-
         debug_logger.debug(f"{len(lines)} Lines")
 
         if not lines:
@@ -68,7 +57,6 @@ while True:
         
 
         for line in lines:
-
             lines_logger.debug(f"Empfangene Zeile: {line}")
 
             current_time = time.time()
@@ -82,40 +70,29 @@ while True:
             debug_logger.debug(f"Nachricht: {sbs_message}")
 
             try:
-                if not is_valid_lat_lon( sbs_message ):
-                    main_logger.warning(f"Ungültige Koordinaten für Flugzeug {sbs_message.icao}: lat={sbs_message.latitude}, lon={sbs_message.longitude}")
-                    continue
-
-
-                if not is_valid_altitude( sbs_message ):
-                    main_logger.warning(f"Ungültige Höhe für Flugzeug {sbs_message.icao}: altitude={sbs_message.altitude}")
-                    continue
-
-
                 usedAction = "nothing"
-
+                
+                # Aircraft-Objekt mit minimalen Daten erstellen und Daten validiert.
                 aircraft = Aircraft(
-                    hex = sbs_message.icao,
                     altitude = sbs_message.altitude,
                     lat = sbs_message.latitude,
                     lon = sbs_message.longitude,
-                    timestamp = sbs_message.timestamp,                    
-                    config = config
+                    aircraftRegistrationDB = aircraftRegistrationDB,
+                    log = log,
                 )
+
+                if not aircraft.is_valid():
+                    main_logger.warning(f"Ungültige Daten für Flugzeug {sbs_message.icao}: {aircraft}")
+                    continue
+
+
+                # Aircraft valid, also kompletiere die Daten
+                aircraft.enrich_with_sbs_message(sbs_message, config)
 
                 # Überprüfen, ob das Flugzeug innerhalb des definierten Radius ist
                 if aircraft.distance is None or aircraft.distance >= config.RADIUS_KM:
                     continue
-
-
-                # add aircrfaft registration to the aircraft object    
-                registration = aircraftRegistrationDB.get(aircraft.hex.upper())  # `.get()` gibt None zurück, falls der Key nicht existiert
-                aircraft.set_registration(registration)
-
-                if registration:
-                    main_logger.info(f"Registration for {sbs_message.icao}: {registration}")
-                else:
-                    main_logger.warning(f"Key {sbs_message.icao} not found in JSON data.")
+               
               
                 relevant_entries = aircraftTracker.get_existing_entries(aircraft.hex)
                 
@@ -124,10 +101,14 @@ while True:
                     aircraftTracker.add_aircraft( aircraft )
                 elif relevant_entries and not aircraftTracker.should_add_new(relevant_entries, current_time):
                       
-                    # Aktualisiere den jüngsten Eintrag bei sinkender Höhe
+                    # Aktualisiere den jüngsten Eintrag
                     latest_entry = max( relevant_entries, key = lambda x: x.last_seen )
                     
-                    # aircraft nur aktualisieren, wenn entfernung niedriger ist als die gespeichert Entfernung
+                    #bug!!!
+                    #2025-04-21 00:30:59,768 - INFO - aircraft.distance: 152.25392659048055, latest_entry.distance: None
+                    #2025-04-21 00:30:59,769 - ERROR - Unerwarteter Fehler: '<' not supported between instances of 'float' and 'NoneType'
+
+                    # update the aircraft class only if the current distance is lower than the stored distance
                     if aircraft.distance < latest_entry.distance:
                         usedAction = "update aircraft"
                         aircraftTracker.update_aircraft(latest_entry, aircraft)
@@ -138,10 +119,10 @@ while True:
                 # little debugging
                 if usedAction != "nothing":
                     # logge das aircraft
-                    main_logger.info(f"Detected aircraft: {aircraft}")
+                    main_logger.info(f"Detected aircraft: {aircraft.hex}")
                     main_logger.info(f"********************************************************************************")
                     main_logger.info(f"Action: {usedAction}")
-                    main_logger.info(f"Aircraft: {aircraft}")
+                    main_logger.info(f"Aircraft: hex={aircraft.hex}, registration={aircraft.registration}, altitude={aircraft.altitude}, distance={aircraft.distance}, lat={aircraft.lat}, lon={aircraft.lon}, seen={aircraft.seen}, last_seen={aircraft.last_seen}")
               
             except ValueError as e:
                 main_logger.error(f"Fehler beim Verarbeiten der SBSMessage {sbs_message}: {e}")

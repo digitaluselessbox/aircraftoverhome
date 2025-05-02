@@ -5,12 +5,20 @@ import json
 from logic.aircraft import Aircraft  # neue Aircraft-Klasse importieren
 
 class AircraftTracker:
-    def __init__(self, config):
-        self.config = config        
+    def __init__(self, config, log, aircraftRegistrationDB):
+        self.config = config
+        self.log = log
+        self.aircraft_db = aircraftRegistrationDB
 
-        # Beim Laden: JSON → Aircraft-Objekte
-        self.current_aircraft = [Aircraft.from_dict(a) for a in self._load(self.config.JSON_FILE)]
-        self.alltime_aircraft = [Aircraft.from_dict(a) for a in self._load(self.config.ALLTIME_JSON_FILE)]
+        self.current_aircraft = [
+            Aircraft.from_dict(a, config=self.config, log=self.log, aircraftRegistrationDB=self.aircraft_db)
+            for a in self._load(self.config.JSON_FILE)
+        ]
+
+        self.alltime_aircraft = [
+            Aircraft.from_dict(a, config=self.config, log=self.log, aircraftRegistrationDB=self.aircraft_db)
+            for a in self._load(self.config.ALLTIME_JSON_FILE)
+        ]
 
     def _load(self, path):
         try:
