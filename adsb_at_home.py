@@ -2,61 +2,40 @@ import signal
 import sys
 import time
 import json
-import logging
-import os
 
-from logging.handlers import RotatingFileHandler
 from logic.sbs_client import SBSClient
 from logic.sbs_parser import SBSParser
 from logic.aircraft_tracker import AircraftTracker
 from logic.aircraft import Aircraft
+from logic.log_manager import LogManager
 from config import Config
 
+# Konfiguration laden
 config = Config("DEVELOPMENT")
 
+# LogManager initialisieren
+log = LogManager(config)
+main_logger = log.get_logger("main")
+debug_logger = log.get_logger("debug")
+lines_logger = log.get_logger("lines")
 
-# Sicherstellen, dass das Verzeichnis für Logs existiert
-os.makedirs(config.LOG_DIRECTORY, exist_ok=True)
+# AircraftTracker initialisierung
+aircraftTracker = AircraftTracker(config)
 
-log_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+# SBSClient initialisierung
+sbsClient = SBSClient(config, logger=main_logger)
+sbsClient.connect()
 
-# Standard-Logger für adsb_over_home.log
-main_handler = RotatingFileHandler(f"{config.LOG_DIRECTORY}/adsb_over_home.log", maxBytes=512000, backupCount=10)
-main_logger = logging.getLogger("main_logger")
-main_logger.setLevel(logging.INFO)
-main_logger.addHandler(main_handler)
-main_handler.setFormatter(log_formatter)
-
-# Debug-Logger für adsb_over_home_debug.log
-debug_handler = RotatingFileHandler(f"{config.LOG_DIRECTORY}/adsb_over_home_debug.log", maxBytes=512000, backupCount=100)
-debug_logger = logging.getLogger("debug_logger")
-debug_logger.setLevel(logging.DEBUG)
-debug_logger.addHandler(debug_handler)
-debug_handler.setFormatter(log_formatter)
-
-# Lines-Logger für adsb_over_home_lines.log
-lines_handler = RotatingFileHandler(f"{config.LOG_DIRECTORY}/lines/adsb_over_home_lines.log", maxBytes=1024000, backupCount=100)
-lines_logger = logging.getLogger("lines_logger")
-lines_logger.setLevel(logging.DEBUG)
-lines_logger.addHandler(lines_handler)
-lines_handler.setFormatter(log_formatter)
-
+# SBSParser initialisierung
+sbsParser = SBSParser()
 
 # STRG+C-Handler
 def signal_handler(sig, frame):
     main_logger.info("Skript wird beendet.")
-    client.close()
+    sbsClient.close()
     sys.exit(0)
-    
 signal.signal(signal.SIGINT, signal_handler)
 
-
-tracker = AircraftTracker(config)
-
-client = SBSClient(config, logger=main_logger)
-client.connect()
-
-parser = SBSParser()
 
 main_logger.info(f"Skript gestartet: {config.HOST}:{config.PORT}")
 
@@ -79,8 +58,8 @@ def is_valid_altitude( sbs_message ):
 buffer = ""
 while True:
     try:
-        #socketResponse = sock.recv(8192).decode('utf-8')
-        lines = client.read_lines()
+        lines = sbsClient.read_lines()
+
         debug_logger.debug(f"{len(lines)} Lines")
 
         if not lines:
@@ -94,11 +73,12 @@ while True:
 
             current_time = time.time()
 
-            sbs_message = parser.parse_line(line)
+            sbs_message = sbsParser.parse_line(line)
             
             if not sbs_message:
                 continue  # Überspringe ungültige Nachrichten
             
+
             debug_logger.debug(f"Nachricht: {sbs_message}")
 
             try:
@@ -106,10 +86,12 @@ while True:
                     main_logger.warning(f"Ungültige Koordinaten für Flugzeug {sbs_message.icao}: lat={sbs_message.latitude}, lon={sbs_message.longitude}")
                     continue
 
+
                 if not is_valid_altitude( sbs_message ):
                     main_logger.warning(f"Ungültige Höhe für Flugzeug {sbs_message.icao}: altitude={sbs_message.altitude}")
                     continue
-                
+
+
                 usedAction = "nothing"
 
                 aircraft = Aircraft(
@@ -125,6 +107,7 @@ while True:
                 if aircraft.distance is None or aircraft.distance >= config.RADIUS_KM:
                     continue
 
+
                 # add aircrfaft registration to the aircraft object    
                 registration = aircraftRegistrationDB.get(aircraft.hex.upper())  # `.get()` gibt None zurück, falls der Key nicht existiert
                 aircraft.set_registration(registration)
@@ -133,23 +116,21 @@ while True:
                     main_logger.info(f"Registration for {sbs_message.icao}: {registration}")
                 else:
                     main_logger.warning(f"Key {sbs_message.icao} not found in JSON data.")
-
-               
-
-                relevant_entries = tracker.get_existing_entries(aircraft.hex)
+              
+                relevant_entries = aircraftTracker.get_existing_entries(aircraft.hex)
                 
-                if not relevant_entries or tracker.should_add_new(relevant_entries, current_time):
+                if not relevant_entries or aircraftTracker.should_add_new(relevant_entries, current_time):
                     usedAction = "new aircraft"
-                    tracker.add_aircraft( aircraft )
-                elif relevant_entries and not tracker.should_add_new(relevant_entries, current_time):
+                    aircraftTracker.add_aircraft( aircraft )
+                elif relevant_entries and not aircraftTracker.should_add_new(relevant_entries, current_time):
                       
                     # Aktualisiere den jüngsten Eintrag bei sinkender Höhe
-                    latest_entry = max( relevant_entries, key = lambda x: x['last_seen'] )
+                    latest_entry = max( relevant_entries, key = lambda x: x.last_seen )
                     
                     # aircraft nur aktualisieren, wenn entfernung niedriger ist als die gespeichert Entfernung
                     if aircraft.distance < latest_entry.distance:
                         usedAction = "update aircraft"
-                        tracker.update_aircraft(latest_entry, aircraft)
+                        aircraftTracker.update_aircraft(latest_entry, aircraft)
                 #else:
                     # so nothing to do, aircraft is already in the list
 
@@ -164,14 +145,14 @@ while True:
               
             except ValueError as e:
                 main_logger.error(f"Fehler beim Verarbeiten der SBSMessage {sbs_message}: {e}")
-    
+   
         
         # veraltete Flugzeuge separieren und zum Archivieren speichern
-        tracker.cleanup_old(current_time)
+        aircraftTracker.cleanup_old(current_time)
 
         # Speichern in der gewünschten JSON-Struktur
         try:
-            tracker.save_all()            
+            aircraftTracker.save_all()            
         except IOError as e:
             main_logger.error(f"Fehler beim Speichern der JSON-Datei: {e}")
         
