@@ -8,10 +8,13 @@ from logic.sbs_parser import SBSParser
 from logic.aircraft_tracker import AircraftTracker
 from logic.aircraft import Aircraft
 from logic.log_manager import LogManager
+from logic.constants import Environment
+
 from config import Config
 
+
 # Konfiguration laden
-config = Config("DEVELOPMENT")
+config = Config(Environment.PRODUCTION)
 
 # LogManager initialisieren
 log = LogManager(config)

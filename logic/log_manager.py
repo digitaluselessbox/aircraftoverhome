@@ -1,6 +1,7 @@
 import os
 import logging
 from logging.handlers import RotatingFileHandler
+from logic.constants import Environment
 
 class LogManager:
     def __init__(self, config):
@@ -24,23 +25,25 @@ class LogManager:
             backup_count=10,
         )
 
-        self._register_logger(
-            name="debug",
-            path=f"{log_dir}/adsb_over_home_debug.log",
-            level=logging.DEBUG,
-            formatter=formatter,
-            max_bytes=512_000,
-            backup_count=100,
-        )
+        if self.config.ENV == Environment.DEVELOPMENT:
+            self._register_logger(
+                name="debug",
+                path=f"{log_dir}/adsb_over_home_debug.log",
+                level=logging.DEBUG,
+                formatter=formatter,
+                max_bytes=512_000,
+                backup_count=100,
+            )
 
-        self._register_logger(
-            name="lines",
-            path=f"{log_dir}/lines/adsb_over_home_lines.log",
-            level=logging.DEBUG,
-            formatter=formatter,
-            max_bytes=1_024_000,
-            backup_count=100,
-        )
+            self._register_logger(
+                name="lines",
+                path=f"{log_dir}/lines/adsb_over_home_lines.log",
+                level=logging.DEBUG,
+                formatter=formatter,
+                max_bytes=1_024_000,
+                backup_count=100,
+            )
+               
 
     def _register_logger(self, name, path, level, formatter, max_bytes, backup_count):
         logger = logging.getLogger(name)
@@ -52,9 +55,20 @@ class LogManager:
         self._loggers[name] = logger
 
     def get_logger(self, name):
-        return self._loggers.get(name, logging.getLogger("default"))
+        return self._loggers.get(name, DummyLogger())
 
     def set_level(self, name, level):
         logger = self._loggers.get(name)
         if logger:
             logger.setLevel(level)
+
+# DummyLogger ist ein Platzhalter, der keine Ausgaben erzeugt
+# und keine Fehler verursacht, wenn kein Logger registriert ist.
+# Dies ist nützlich für Tests oder wenn Logging nicht benötigt wird.
+# Könnte später noch in eine eigene Datei ausgelagert werden.
+class DummyLogger:
+    def debug(self, *args, **kwargs): pass
+    def info(self, *args, **kwargs): pass
+    def warning(self, *args, **kwargs): pass
+    def error(self, *args, **kwargs): pass
+    def critical(self, *args, **kwargs): pass
