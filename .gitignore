@@ -1,5 +1,6 @@
 # general
 log/
+config.py
 
 
 # Byte-compiled / optimized / DLL files

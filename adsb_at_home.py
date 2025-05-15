@@ -82,7 +82,6 @@ while True:
                     lon = sbs_message.longitude,
                     aircraftRegistrationDB = aircraftRegistrationDB,
                     log = log,
-                    config = config,
                 )
 
                 if not aircraft.is_valid():
@@ -96,8 +95,11 @@ while True:
                 # Überprüfen, ob das Flugzeug innerhalb des definierten Radius ist
                 if aircraft.distance is None or aircraft.distance >= config.RADIUS_KM:
                     continue
-               
-              
+
+                # Überprüfen, ob das Flugzeug innerhalb der Höhenbeschränkungen ist
+                if aircraft.altitude is None or aircraft.altitude < config.MIN_HEIGHT or aircraft.altitude > config.MAX_HEIGHT:
+                    continue               
+
                 relevant_entries = aircraftTracker.get_existing_entries(aircraft.hex)
                 
                 if not relevant_entries or aircraftTracker.should_add_new(relevant_entries, current_time):
