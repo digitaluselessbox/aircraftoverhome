@@ -5,6 +5,7 @@ from utils import haversine
 
 class Aircraft:
     def __init__(self, hex=None, registration=None, altitude=None, lat=None, lon=None, timestamp=None, config=None, aircraftRegistrationDB=None, log=None):
+        self.config = config
         self.hex = hex
         self.registration = registration
         self.altitude = altitude
@@ -32,7 +33,7 @@ class Aircraft:
         return self.lat is not None and self.lon is not None and -90 <= self.lat <= 90 and -180 <= self.lon <= 180
 
     def is_valid_altitude(self):
-        return self.altitude is not None and self.altitude >= 0
+        return self.altitude is not None and self.altitude >= self.config.MIN_HEIGHT and self.altitude <= self.config.MAX_HEIGHT
 
     def is_valid(self):
         return self.is_valid_altitude() and self.is_valid_position()

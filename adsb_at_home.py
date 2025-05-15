@@ -82,6 +82,7 @@ while True:
                     lon = sbs_message.longitude,
                     aircraftRegistrationDB = aircraftRegistrationDB,
                     log = log,
+                    config = config,
                 )
 
                 if not aircraft.is_valid():
