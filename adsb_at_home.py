@@ -23,7 +23,7 @@ debug_logger = log.get_logger("debug")
 lines_logger = log.get_logger("lines")
 
 # laden der aircraft registration database json file and save it in a dictionary
-with open(config.DUMP1090DATAFOLDER + "/database/aircraft_registrations.json", 'r') as file:
+with open("data/database/aircraft_registrations.json", 'r', encoding='utf-8') as file:
     aircraftRegistrationDB = json.load(file)
 
 # AircraftTracker initialisierung
@@ -57,7 +57,9 @@ while True:
         if not lines:
             time.sleep(1)
             continue
-        
+
+
+        current_time = time.time()
 
         for line in lines:
             lines_logger.debug(f"Empfangene Zeile: {line}")
@@ -65,16 +67,16 @@ while True:
             current_time = time.time()
 
             sbs_message = sbsParser.parse_line(line)
-            
+
             if not sbs_message:
                 continue  # Überspringe ungültige Nachrichten
-            
+
 
             debug_logger.debug(f"Nachricht: {sbs_message}")
 
             try:
                 usedAction = "nothing"
-                
+
                 # Aircraft-Objekt mit minimalen Daten erstellen und Daten validiert.
                 aircraft = Aircraft(
                     altitude = sbs_message.altitude,
@@ -98,26 +100,23 @@ while True:
 
                 # Überprüfen, ob das Flugzeug innerhalb der Höhenbeschränkungen ist
                 if aircraft.altitude is None or aircraft.altitude < config.MIN_HEIGHT or aircraft.altitude > config.MAX_HEIGHT:
-                    continue               
+                    continue
 
                 relevant_entries = aircraftTracker.get_existing_entries(aircraft.hex)
-                
+
                 if not relevant_entries or aircraftTracker.should_add_new(relevant_entries, current_time):
                     usedAction = "new aircraft"
                     aircraftTracker.add_aircraft( aircraft )
                 elif relevant_entries and not aircraftTracker.should_add_new(relevant_entries, current_time):
-                      
+
                     # Aktualisiere den jüngsten Eintrag
                     latest_entry = max( relevant_entries, key = lambda x: x.last_seen )
-                    
-                    #bug!!!
-                    #2025-04-21 00:30:59,768 - INFO - aircraft.distance: 152.25392659048055, latest_entry.distance: None
-                    #2025-04-21 00:30:59,769 - ERROR - Unerwarteter Fehler: '<' not supported between instances of 'float' and 'NoneType'
 
-                    # update the aircraft class only if the current distance is lower than the stored distance
-                    if aircraft.distance < latest_entry.distance:
+                    # update the aircraft class only if the current distance is not none and lower than the stored distance
+                    if latest_entry.distance is None or aircraft.distance < latest_entry.distance:
                         usedAction = "update aircraft"
                         aircraftTracker.update_aircraft(latest_entry, aircraft)
+
                 #else:
                     # so nothing to do, aircraft is already in the list
 
@@ -129,21 +128,21 @@ while True:
                     main_logger.info(f"********************************************************************************")
                     main_logger.info(f"Action: {usedAction}")
                     main_logger.info(f"Aircraft: hex={aircraft.hex}, registration={aircraft.registration}, altitude={aircraft.altitude}, distance={aircraft.distance}, lat={aircraft.lat}, lon={aircraft.lon}, seen={aircraft.seen}, last_seen={aircraft.last_seen}")
-              
+
             except ValueError as e:
                 main_logger.error(f"Fehler beim Verarbeiten der SBSMessage {sbs_message}: {e}")
-   
-        
+
+
         # veraltete Flugzeuge separieren und zum Archivieren speichern
         aircraftTracker.cleanup_old(current_time)
 
         # Speichern in der gewünschten JSON-Struktur
         try:
-            aircraftTracker.save_all()            
+            aircraftTracker.save_all()
         except IOError as e:
             main_logger.error(f"Fehler beim Speichern der JSON-Datei: {e}")
-        
-        
+
+
         time.sleep(5)
 
     except BlockingIOError:

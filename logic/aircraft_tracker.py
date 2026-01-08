@@ -22,13 +22,13 @@ class AircraftTracker:
 
     def _load(self, path):
         try:
-            with open(path, 'r') as f:
+            with open(path, 'r', encoding='utf-8') as f:
                 return json.load(f).get("aircraft", [])
-        except:
+        except (FileNotFoundError, json.JSONDecodeError):
             return []
 
     def _save(self, path, aircraft_list):
-        with open(path, 'w') as f:
+        with open(path, 'w', encoding='utf-8') as f:
             # Aircraft-Objekte → Dictionaries
             json.dump({"now": time.time(), "aircraft": [a.to_dict() for a in aircraft_list]}, f, indent=4)
 
